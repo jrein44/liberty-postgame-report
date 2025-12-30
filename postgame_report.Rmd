@@ -1,0 +1,697 @@
+---
+title: "POST-GAME REPORT"
+output: html_document
+params:
+  data_dir: "data"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, 
+                      fig.width = 10, fig.height = 6)
+library(dplyr)
+library(tidyr)
+library(gt)
+library(ggplot2)
+library(jsonlite)
+library(sportyR)
+library(patchwork)
+source("process_second_spectrum.R")
+
+game_data <- process_game(params$data_dir)
+gi <- game_data$game_info
+
+liberty_teal <- "#19b5a5"
+mystics_red <- "#c8102e"
+home_color <- liberty_teal
+away_color <- mystics_red
+```
+
+<div style="text-align: center; padding: 20px; background: linear-gradient(135deg, `r home_color` 0%, #004d40 100%); color: white; margin-bottom: 20px;">
+<h1 style="margin: 0;">`r gi$away_team` @ `r gi$home_team`</h1>
+<h2 style="margin: 10px 0;">Final: `r gi$home_team` `r gi$home_score` - `r gi$away_team` `r gi$away_score`</h2>
+<p style="margin: 0;">`r gi$date`</p>
+</div>
+
+## Game Overview {.tabset}
+
+### Quarter-by-Quarter
+
+```{r quarters}
+home_q <- game_data$quarter_stats %>% 
+  filter(team == "home") %>% 
+  arrange(period)
+
+away_pts <- game_data$quarter_stats %>% 
+  filter(team == "away") %>% 
+  arrange(period) %>% 
+  pull(pts)
+
+home_table <- home_q %>%
+  mutate(pm = pts - away_pts) %>%
+  select(QTR = period, PTS = pts, OREB = orb, DREB = drb, TOV = tov, AST = ast, `+/-` = pm)
+
+home_totals <- home_table %>%
+  summarise(across(where(is.numeric), sum)) %>%
+  mutate(QTR = "TOT")
+
+bind_rows(home_table %>% mutate(QTR = as.character(QTR)), home_totals) %>%
+  gt() %>%
+  tab_header(title = md(paste0("**", gi$home_team, "**"))) %>%
+  cols_align(align = "center") %>%
+  tab_style(style = cell_fill(color = home_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels()) %>%
+  tab_style(style = list(cell_fill(color = home_color), cell_text(color = "white", weight = "bold")),
+            locations = cells_body(rows = QTR == "TOT")) %>%
+  data_color(columns = `+/-`, rows = QTR != "TOT",
+             palette = c("#FF9999", "white", "#90EE90"), domain = c(-15, 0, 15))
+```
+
+```{r quarters_away}
+away_q <- game_data$quarter_stats %>% 
+  filter(team == "away") %>% 
+  arrange(period)
+
+home_pts <- game_data$quarter_stats %>% 
+  filter(team == "home") %>% 
+  arrange(period) %>% 
+  pull(pts)
+
+away_table <- away_q %>%
+  mutate(pm = pts - home_pts) %>%
+  select(QTR = period, PTS = pts, OREB = orb, DREB = drb, TOV = tov, AST = ast, `+/-` = pm)
+
+away_totals <- away_table %>%
+  summarise(across(where(is.numeric), sum)) %>%
+  mutate(QTR = "TOT")
+
+bind_rows(away_table %>% mutate(QTR = as.character(QTR)), away_totals) %>%
+  gt() %>%
+  tab_header(title = md(paste0("**", gi$away_team, "**"))) %>%
+  cols_align(align = "center") %>%
+  tab_style(style = cell_fill(color = away_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels()) %>%
+  tab_style(style = list(cell_fill(color = away_color), cell_text(color = "white", weight = "bold")),
+            locations = cells_body(rows = QTR == "TOT")) %>%
+  data_color(columns = `+/-`, rows = QTR != "TOT",
+             palette = c("#FF9999", "white", "#90EE90"), domain = c(-15, 0, 15))
+```
+
+### Shooting by Location
+
+```{r shooting_location}
+ts <- game_data$team_shooting
+
+location_data <- tibble(
+  Location = c("Rim (0-5ft)", "Paint (5-10ft)", "Mid-Range (10ft+)", "Three-Point"),
+  home_fgm = c(ts$rim_fgm[ts$team=="home"], ts$paint_fgm[ts$team=="home"], 
+               ts$mid_fgm[ts$team=="home"], ts$tpm[ts$team=="home"]),
+  home_fga = c(ts$rim_fga[ts$team=="home"], ts$paint_fga[ts$team=="home"],
+               ts$mid_fga[ts$team=="home"], ts$tpa[ts$team=="home"]),
+  away_fgm = c(ts$rim_fgm[ts$team=="away"], ts$paint_fgm[ts$team=="away"],
+               ts$mid_fgm[ts$team=="away"], ts$tpm[ts$team=="away"]),
+  away_fga = c(ts$rim_fga[ts$team=="away"], ts$paint_fga[ts$team=="away"],
+               ts$mid_fga[ts$team=="away"], ts$tpa[ts$team=="away"])
+) %>%
+  mutate(
+    home_pct = ifelse(home_fga > 0, home_fgm / home_fga, NA),
+    away_pct = ifelse(away_fga > 0, away_fgm / away_fga, NA),
+    Home = sprintf("%d/%d (%.0f%%)", home_fgm, home_fga, home_pct * 100),
+    Away = sprintf("%d/%d (%.0f%%)", away_fgm, away_fga, away_pct * 100),
+    Diff = round((home_pct - away_pct) * 100, 1)
+  )
+
+location_data %>%
+  select(Location, Home, Away, Diff) %>%
+  gt() %>%
+  cols_label(Home = gi$home_team, Away = gi$away_team, Diff = "+/-") %>%
+  cols_align(align = "center", columns = -Location) %>%
+  tab_style(style = cell_fill(color = home_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels()) %>%
+  data_color(columns = Diff, palette = c("#FF9999", "white", "#90EE90"), domain = c(-30, 0, 30))
+```
+
+### Pace Summary
+
+```{r pace}
+pace <- game_data$pace_splits
+
+pace_table <- tibble(
+  Metric = c("Transition POSS", "Transition PTS", "Transition PPP",
+             "Halfcourt POSS", "Halfcourt PTS", "Halfcourt PPP"),
+  Home = c(pace$transition_poss[pace$team=="home"], pace$transition_pts[pace$team=="home"],
+           round(pace$transition_ppp[pace$team=="home"], 2),
+           pace$halfcourt_poss[pace$team=="home"], pace$halfcourt_pts[pace$team=="home"],
+           round(pace$halfcourt_ppp[pace$team=="home"], 2)),
+  Away = c(pace$transition_poss[pace$team=="away"], pace$transition_pts[pace$team=="away"],
+           round(pace$transition_ppp[pace$team=="away"], 2),
+           pace$halfcourt_poss[pace$team=="away"], pace$halfcourt_pts[pace$team=="away"],
+           round(pace$halfcourt_ppp[pace$team=="away"], 2))
+)
+
+pace_table %>%
+  gt() %>%
+  cols_label(Home = gi$home_team, Away = gi$away_team) %>%
+  cols_align(align = "center", columns = -Metric) %>%
+  tab_style(style = cell_fill(color = home_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels())
+```
+
+---
+
+## Player Shooting {.tabset}
+
+### `r gi$home_team`
+
+```{r home_players}
+game_data$player_stats %>%
+  filter(team == "home") %>%
+  arrange(desc(total_fga)) %>%
+  mutate(
+    `FG%` = sprintf("%.1f%%", fg_pct * 100),
+    PPS = sprintf("%.2f", pps),
+    `3P%` = ifelse(tpa > 0, sprintf("%.1f%%", tp_pct * 100), "-")
+  ) %>%
+  select(Name = name, FGM = total_fgm, FGA = total_fga, `FG%`, PPS, 
+         `3PM` = tpm, `3PA` = tpa, `3P%`, AST = ast) %>%
+  gt() %>%
+  cols_align(align = "center", columns = -Name) %>%
+  tab_style(style = cell_fill(color = home_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels())
+```
+
+### `r gi$away_team`
+
+```{r away_players}
+game_data$player_stats %>%
+  filter(team == "away") %>%
+  arrange(desc(total_fga)) %>%
+  mutate(
+    `FG%` = sprintf("%.1f%%", fg_pct * 100),
+    PPS = sprintf("%.2f", pps),
+    `3P%` = ifelse(tpa > 0, sprintf("%.1f%%", tp_pct * 100), "-")
+  ) %>%
+  select(Name = name, FGM = total_fgm, FGA = total_fga, `FG%`, PPS,
+         `3PM` = tpm, `3PA` = tpa, `3P%`, AST = ast) %>%
+  gt() %>%
+  cols_align(align = "center", columns = -Name) %>%
+  tab_style(style = cell_fill(color = away_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels())
+```
+
+---
+
+## Shot Charts
+
+```{r shot_charts, fig.width=14, fig.height=7}
+markings_path <- file.path(params$data_dir, "basketball-markings__3_.json")
+
+if (file.exists(markings_path)) {
+  markings <- fromJSON(markings_path)
+  
+  shots <- markings$chances %>%
+    filter(grepl("^FG", outcome)) %>%
+    mutate(
+      raw_x = sapply(endLoc, function(e) if(length(e) >= 1) e[1] else NA),
+      raw_y = sapply(endLoc, function(e) if(length(e) >= 2) e[2] else NA),
+      made = grepl("FGM", outcome),
+      team = ifelse(offTeamId == gi$home_team_id, "home", "away"),
+      team_name = ifelse(team == "home", gi$home_team, gi$away_team)
+    ) %>%
+    filter(!is.na(raw_x), !is.na(raw_y)) %>%
+    mutate(
+      plot_x = raw_y,
+      plot_y = raw_x
+    )
+  
+  home_shots <- shots %>% filter(team == "home")
+  home_chart <- geom_basketball(league = "WNBA", display_range = "offense", rotation = 270,
+                                 color_updates = list(
+                                   offensive_half_court = "#ffffff",
+                                   court_apron = "#ffffff", 
+                                   two_point_range = "#ffffff",
+                                   painted_area = "#ffffff",
+                                   free_throw_circle_fill = "#ffffff",
+                                   center_circle_fill = "#ffffff"
+                                 )) +
+    geom_point(data = home_shots, aes(x = plot_x, y = plot_y, color = made, shape = made), 
+               size = 3, alpha = 0.8) +
+    scale_color_manual(values = c("FALSE" = "#CC0000", "TRUE" = "#00AA00"),
+                       labels = c("FALSE" = "Missed", "TRUE" = "Made")) +
+    scale_shape_manual(values = c("FALSE" = 4, "TRUE" = 16),
+                       labels = c("FALSE" = "Missed", "TRUE" = "Made")) +
+    labs(title = gi$home_team, color = "Result", shape = "Result") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+          legend.position = "bottom")
+  
+  away_shots <- shots %>% filter(team == "away")
+  away_chart <- geom_basketball(league = "WNBA", display_range = "offense", rotation = 270,
+                                 color_updates = list(
+                                   offensive_half_court = "#ffffff",
+                                   court_apron = "#ffffff", 
+                                   two_point_range = "#ffffff",
+                                   painted_area = "#ffffff",
+                                   free_throw_circle_fill = "#ffffff",
+                                   center_circle_fill = "#ffffff"
+                                 )) +
+    geom_point(data = away_shots, aes(x = plot_x, y = plot_y, color = made, shape = made), 
+               size = 3, alpha = 0.8) +
+    scale_color_manual(values = c("FALSE" = "#CC0000", "TRUE" = "#00AA00"),
+                       labels = c("FALSE" = "Missed", "TRUE" = "Made")) +
+    scale_shape_manual(values = c("FALSE" = 4, "TRUE" = 16),
+                       labels = c("FALSE" = "Missed", "TRUE" = "Made")) +
+    labs(title = gi$away_team, color = "Result", shape = "Result") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+          legend.position = "bottom")
+  
+  home_chart + away_chart + plot_layout(guides = "collect") & theme(legend.position = "bottom")
+}
+```
+
+---
+
+## Zone Analysis {.tabset}
+
+```{r zone_setup}
+markings_path <- file.path(params$data_dir, "basketball-markings__3_.json")
+markings <- fromJSON(markings_path)
+home_team_id <- gi$home_team_id
+
+shots_with_zones <- markings$chances %>%
+  filter(grepl("^FG", outcome)) %>%
+  mutate(
+    x = sapply(endLoc, function(e) if(length(e) >= 1) e[1] else NA),
+    y = sapply(endLoc, function(e) if(length(e) >= 2) e[2] else NA),
+    made = grepl("FGM", outcome),
+    team = ifelse(offTeamId == home_team_id, "home", "away")
+  ) %>%
+  filter(!is.na(x), !is.na(y)) %>%
+  mutate(
+    basket_x = ifelse(x < 0, -41.75, 41.75),
+    dist = sqrt((x - basket_x)^2 + y^2),
+    zone = case_when(
+      dist <= 5 ~ "Rim",
+      dist <= 10 ~ "Paint", 
+      dist > 22.15 ~ "Three",
+      TRUE ~ "Mid-Range"
+    ),
+    zone_detail = case_when(
+      zone == "Three" & abs(y) > 22 ~ "Corner 3",
+      zone == "Three" ~ "Above Break 3",
+      TRUE ~ zone
+    )
+  )
+
+zone_stats <- shots_with_zones %>%
+  group_by(team, zone_detail) %>%
+  summarise(
+    fga = n(),
+    fgm = sum(made),
+    .groups = "drop"
+  ) %>%
+  mutate(fg_pct = round(fgm / fga * 100, 1))
+```
+
+### FG% by Zone
+
+```{r zone_chart, fig.width=12, fig.height=6}
+zone_order <- c("Rim", "Paint", "Mid-Range", "Above Break 3", "Corner 3")
+
+zone_stats %>%
+  mutate(
+    zone_detail = factor(zone_detail, levels = zone_order),
+    team_name = ifelse(team == "home", gi$home_team, gi$away_team)
+  ) %>%
+  ggplot(aes(x = zone_detail, y = fg_pct, fill = team_name)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_text(aes(label = paste0(fgm, "/", fga, "\n", fg_pct, "%")), 
+            position = position_dodge(width = 0.7), vjust = -0.3, size = 3) +
+  scale_fill_manual(values = setNames(c(home_color, away_color), c(gi$home_team, gi$away_team))) +
+  labs(title = "FG% by Zone", x = "", y = "FG%", fill = "") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 0, hjust = 0.5)
+  ) +
+  ylim(0, 100)
+```
+
+### Play Type Breakdown
+
+```{r play_type}
+play_types <- markings$chances %>%
+  filter(grepl("^FG", outcome)) %>%
+  mutate(
+    team = ifelse(offTeamId == home_team_id, "home", "away"),
+    made = grepl("FGM", outcome),
+    pts = ifelse(made, ptsScored, 0)
+  ) %>%
+  group_by(team, category) %>%
+  summarise(
+    fga = n(),
+    fgm = sum(made),
+    pts = sum(pts),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    fg_pct = round(fgm / fga * 100, 1),
+    pps = round(pts / fga, 2)
+  )
+
+play_types %>%
+  filter(category %in% c("halfcourt", "transition", "putback")) %>%
+  mutate(
+    team_name = ifelse(team == "home", gi$home_team, gi$away_team),
+    category = tools::toTitleCase(category)
+  ) %>%
+  select(Team = team_name, `Play Type` = category, FGA = fga, FGM = fgm, `FG%` = fg_pct, PPS = pps) %>%
+  arrange(Team, desc(FGA)) %>%
+  gt() %>%
+  tab_header(title = md("**Play Type Breakdown**")) %>%
+  cols_align(align = "center", columns = -c(Team, `Play Type`)) %>%
+  tab_style(style = cell_fill(color = home_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels())
+```
+
+---
+
+## Substitution Patterns {.tabset}
+
+```{r sub_map_setup}
+events <- stream_in(file(file.path(params$data_dir, "basketball-events.jsonl")), verbose = FALSE)
+metadata <- fromJSON(file.path(params$data_dir, "metadata_json.json"))
+
+home_players_info <- metadata$data$homeTeam$players %>% select(id, name)
+away_players_info <- metadata$data$awayTeam$players %>% select(id, name)
+
+poss <- fromJSON(file.path(params$data_dir, "basketball-possessions.json"))$possessions
+home_team_id <- metadata$data$homeTeam$id
+
+poss_scores <- poss %>%
+  select(period, gameClockStart, gameClockEnd, teamId, ptsScored) %>%
+  mutate(
+    home_pts = ifelse(teamId == home_team_id, ptsScored, 0),
+    away_pts = ifelse(teamId != home_team_id, ptsScored, 0)
+  )
+
+build_stints <- function(events, players_info, team_col) {
+  events_sorted <- events %>%
+    arrange(period, desc(gameClock)) %>%
+    mutate(
+      lineup = sapply(get(team_col), function(x) paste(sort(x), collapse = ",")),
+      period_changed = period != lag(period, default = 0),
+      lineup_changed = lineup != lag(lineup, default = "") | period_changed
+    )
+  
+  sub_points <- events_sorted %>%
+    filter(lineup_changed) %>%
+    select(period, gameClock, lineup)
+  
+  stints <- list()
+  for (i in 1:nrow(sub_points)) {
+    start_time <- sub_points$gameClock[i]
+    start_period <- sub_points$period[i]
+    
+    if (i < nrow(sub_points) && sub_points$period[i+1] == start_period) {
+      end_time <- sub_points$gameClock[i+1]
+    } else {
+      end_time <- 0
+    }
+    
+    players_on <- strsplit(sub_points$lineup[i], ",")[[1]]
+    
+    for (pid in players_on) {
+      stints[[length(stints) + 1]] <- data.frame(
+        player_id = pid,
+        period = start_period,
+        start_clock = start_time,
+        end_clock = end_time
+      )
+    }
+  }
+  
+  bind_rows(stints) %>%
+    left_join(players_info, by = c("player_id" = "id"))
+}
+
+calc_stint_pm <- function(stint_period, start_clock, end_clock, poss_scores, is_home = TRUE) {
+  relevant_poss <- poss_scores %>%
+    filter(period == stint_period,
+           gameClockStart <= start_clock,
+           gameClockEnd >= end_clock)
+  
+  pm <- sum(relevant_poss$home_pts) - sum(relevant_poss$away_pts)
+  if (!is_home) pm <- -pm
+  return(pm)
+}
+
+create_sub_map <- function(stints, half = 1, team_name = "Team") {
+  
+  periods <- if(half == 1) c(1, 2) else c(3, 4)
+  
+  half_stints <- stints %>%
+    filter(period %in% periods, !is.na(name)) %>%
+    mutate(
+      name = as.character(name),
+      quarter_offset = ifelse(period %in% c(1, 3), 0, 10),
+      start_min = quarter_offset + (600 - start_clock) / 60,
+      end_min = quarter_offset + (600 - end_clock) / 60
+    )
+  
+  player_order <- half_stints %>%
+    group_by(name) %>%
+    summarise(total_min = sum(end_min - start_min)) %>%
+    arrange(desc(total_min)) %>%
+    pull(name)
+  
+  half_stints$name <- factor(half_stints$name, levels = rev(player_order))
+  
+  half_stints <- half_stints %>%
+    mutate(
+      initials = sapply(strsplit(as.character(name), " "), function(x) paste0(substr(x, 1, 1), collapse = ".")),
+      stint_length = end_min - start_min,
+      label = ifelse(stint_length > 1.0, paste0(initials, " (", ifelse(pm >= 0, "+", ""), pm, ")"), "")
+    )
+  
+  q_label <- if(half == 1) "Q1/Q2" else "Q3/Q4"
+  
+  ggplot(half_stints, aes(xmin = start_min, xmax = end_min, 
+                           ymin = as.numeric(name) - 0.4, 
+                           ymax = as.numeric(name) + 0.4,
+                           fill = pm)) +
+    geom_rect(color = "white", linewidth = 0.5) +
+    geom_text(aes(x = (start_min + end_min) / 2, y = as.numeric(name), label = label),
+              size = 2.5, color = "white", fontface = "bold") +
+    scale_fill_gradient2(low = "#CC0000", mid = "gray50", high = "#00AA00", 
+                         midpoint = 0, limits = c(-15, 15)) +
+    scale_y_continuous(breaks = 1:length(player_order), labels = rev(player_order)) +
+    scale_x_continuous(breaks = c(0, 5, 10, 15, 20), 
+                       labels = c("10:00", "5:00", q_label, "5:00", "0:00")) +
+    geom_vline(xintercept = 10, linetype = "dashed", color = "black", alpha = 0.5) +
+    labs(title = paste(team_name, "-", ifelse(half == 1, "1st Half", "2nd Half")),
+         x = "", y = "", fill = "+/-") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.y = element_blank(),
+      legend.position = "none"
+    )
+}
+
+home_stints <- build_stints(events, home_players_info, "homePlayers")
+home_stints <- home_stints %>%
+  rowwise() %>%
+  mutate(pm = calc_stint_pm(period, start_clock, end_clock, poss_scores, TRUE)) %>%
+  ungroup()
+
+away_stints <- build_stints(events, away_players_info, "awayPlayers")
+away_stints <- away_stints %>%
+  rowwise() %>%
+  mutate(pm = calc_stint_pm(period, start_clock, end_clock, poss_scores, FALSE)) %>%
+  ungroup()
+```
+
+### `r gi$home_team`
+
+```{r home_sub_map, fig.width=12, fig.height=8}
+p1 <- create_sub_map(home_stints, half = 1, team_name = gi$home_team)
+p2 <- create_sub_map(home_stints, half = 2, team_name = gi$home_team)
+p1 / p2
+```
+
+### `r gi$away_team`
+
+```{r away_sub_map, fig.width=12, fig.height=8}
+p3 <- create_sub_map(away_stints, half = 1, team_name = gi$away_team)
+p4 <- create_sub_map(away_stints, half = 2, team_name = gi$away_team)
+p3 / p4
+```
+
+---
+
+## Lineup Stats {.tabset}
+
+```{r lineup_setup}
+lineup_times <- events %>%
+  arrange(period, desc(gameClock)) %>%
+  mutate(
+    home_lineup = sapply(homePlayers, function(x) paste(sort(x), collapse = ",")),
+    away_lineup = sapply(awayPlayers, function(x) paste(sort(x), collapse = ","))
+  ) %>%
+  select(period, gameClock, home_lineup, away_lineup)
+
+get_lineup_at_time <- function(period_val, clock_val, lineup_times, team = "home") {
+  col <- if(team == "home") "home_lineup" else "away_lineup"
+  
+  lt <- lineup_times %>%
+    filter(period == period_val, gameClock <= clock_val) %>%
+    arrange(desc(gameClock)) %>%
+    head(1)
+  
+  if(nrow(lt) == 0) return(NA)
+  return(lt[[col]])
+}
+
+poss_with_lineup <- poss %>%
+  rowwise() %>%
+  mutate(
+    home_lineup = get_lineup_at_time(period, gameClockStart, lineup_times, "home"),
+    away_lineup = get_lineup_at_time(period, gameClockStart, lineup_times, "away"),
+    home_pts = ifelse(teamId == home_team_id, ptsScored, 0),
+    away_pts = ifelse(teamId != home_team_id, ptsScored, 0)
+  ) %>%
+  ungroup()
+
+lineup_to_names <- function(lineup_str, players_info) {
+  ids <- strsplit(lineup_str, ",")[[1]]
+  names <- players_info$name[match(ids, players_info$id)]
+  last_names <- sapply(strsplit(names, " "), function(x) tail(x, 1))
+  paste(sort(last_names), collapse = " / ")
+}
+```
+
+### `r gi$home_team`
+
+```{r home_lineup_stats}
+home_lineup_stats <- poss_with_lineup %>%
+  filter(!is.na(home_lineup)) %>%
+  group_by(home_lineup) %>%
+  summarise(
+    poss = n(),
+    pts_for = sum(home_pts),
+    pts_against = sum(away_pts),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    plus_minus = pts_for - pts_against,
+    off_rating = round(pts_for / poss * 100, 1),
+    def_rating = round(pts_against / poss * 100, 1),
+    net_rating = off_rating - def_rating
+  ) %>%
+  rowwise() %>%
+  mutate(players = lineup_to_names(home_lineup, home_players_info)) %>%
+  ungroup() %>%
+  select(players, poss, pts_for, pts_against, plus_minus, off_rating, def_rating, net_rating) %>%
+  arrange(desc(net_rating))
+
+home_lineup_stats %>%
+  filter(poss >= 5) %>%
+  gt() %>%
+  tab_header(title = md(paste0("**", gi$home_team, " - Lineup Stats**"))) %>%
+  cols_label(
+    players = "Lineup",
+    poss = "POSS",
+    pts_for = "PTS",
+    pts_against = "OPP",
+    plus_minus = "+/-",
+    off_rating = "ORtg",
+    def_rating = "DRtg", 
+    net_rating = "NET"
+  ) %>%
+  cols_align(align = "center", columns = -players) %>%
+  tab_style(style = cell_fill(color = home_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels()) %>%
+  data_color(
+    columns = net_rating,
+    palette = c("#FF6666", "white", "#66CC66"),
+    domain = c(-100, 0, 100)
+  ) %>%
+  tab_footnote(footnote = "Minimum 5 possessions")
+```
+
+### `r gi$away_team`
+
+```{r away_lineup_stats}
+away_lineup_stats <- poss_with_lineup %>%
+  filter(!is.na(away_lineup)) %>%
+  group_by(away_lineup) %>%
+  summarise(
+    poss = n(),
+    pts_for = sum(away_pts),
+    pts_against = sum(home_pts),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    plus_minus = pts_for - pts_against,
+    off_rating = round(pts_for / poss * 100, 1),
+    def_rating = round(pts_against / poss * 100, 1),
+    net_rating = off_rating - def_rating
+  ) %>%
+  rowwise() %>%
+  mutate(players = lineup_to_names(away_lineup, away_players_info)) %>%
+  ungroup() %>%
+  select(players, poss, pts_for, pts_against, plus_minus, off_rating, def_rating, net_rating) %>%
+  arrange(desc(net_rating))
+
+away_lineup_stats %>%
+  filter(poss >= 5) %>%
+  gt() %>%
+  tab_header(title = md(paste0("**", gi$away_team, " - Lineup Stats**"))) %>%
+  cols_label(
+    players = "Lineup",
+    poss = "POSS",
+    pts_for = "PTS",
+    pts_against = "OPP",
+    plus_minus = "+/-",
+    off_rating = "ORtg",
+    def_rating = "DRtg", 
+    net_rating = "NET"
+  ) %>%
+  cols_align(align = "center", columns = -players) %>%
+  tab_style(style = cell_fill(color = away_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels()) %>%
+  data_color(
+    columns = net_rating,
+    palette = c("#FF6666", "white", "#66CC66"),
+    domain = c(-100, 0, 100)
+  ) %>%
+  tab_footnote(footnote = "Minimum 5 possessions")
+```
+
+---
+
+## Four Factors
+
+```{r four_factors}
+ff <- game_data$four_factors %>%
+  mutate(Team = ifelse(team == "home", gi$home_team, gi$away_team)) %>%
+  select(Team, `eFG%` = efg_pct, `TOV%` = tov_pct, `OREB%` = orb_pct, PPP = ppp) %>%
+  mutate(`eFG%` = sprintf("%.1f%%", `eFG%` * 100),
+         `TOV%` = sprintf("%.1f%%", `TOV%` * 100),
+         `OREB%` = sprintf("%.1f%%", `OREB%` * 100),
+         PPP = sprintf("%.2f", PPP))
+
+ff %>%
+  gt() %>%
+  cols_align(align = "center", columns = -Team) %>%
+  tab_style(style = cell_fill(color = home_color), locations = cells_column_labels()) %>%
+  tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels())
+```
+
+---
+
+<div style="text-align: center; color: #666; margin-top: 30px; padding: 20px; border-top: 1px solid #ddd;">
+Report prepared using Second Spectrum tracking data<br>
+<strong>Analyst: Jess Reinhardt</strong> | Generated: `r Sys.Date()`
+</div>

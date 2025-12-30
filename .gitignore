@@ -1,0 +1,21 @@
+# R files
+.Rhistory
+.Rdata
+.RData
+.Ruserdata
+.Rproj.user/
+
+# RMarkdown cache
+*_cache/
+*_files/
+
+# MacOS
+.DS_Store
+
+# IDE
+.vscode/
+*.Rproj
+
+# Temporary files
+*.tmp
+*.log
