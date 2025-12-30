@@ -91,6 +91,8 @@ The report is parameterized and can be adapted for any game by:
 
 ## About
 
-📧 [Contact] | 🔗 [LinkedIn] | 📊 [More Projects]
+- **LinkedIn:** www.linkedin.com/in/jessica-reinhardt
+- **Email:** jess.reinhardt44@gmail.com
+- **GitHub:** https://github.com/jrein44
 
 ---
