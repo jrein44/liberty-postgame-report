@@ -3,7 +3,7 @@
 An automated post-game analytics report built with R, using Second Spectrum tracking data. This project demonstrates sports analytics skills including data processing, visualization, and player/lineup analysis.
 
 ## 📊 Live Report
-**[View Sample Report: NY Liberty vs Washington Mystics (9/9/2025)](https://jessreinhardt.github.io/wnba-postgame-report/)**
+**[View Sample Report: NY Liberty vs Washington Mystics (9/9/2025)](https://jrein44.github.io/liberty-postgame-report/)**
 
 ## Features
 
@@ -91,10 +91,6 @@ The report is parameterized and can be adapted for any game by:
 
 ## About
 
-Built by **Jess Reinhardt** as a portfolio piece demonstrating basketball analytics capabilities with professional tracking data.
-
 📧 [Contact] | 🔗 [LinkedIn] | 📊 [More Projects]
 
 ---
-
-*This project showcases skills relevant to basketball analytics roles including data engineering, statistical analysis, and data visualization.*
